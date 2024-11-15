@@ -6,8 +6,8 @@ class Game {
 
     // BLOCK STUFF
     this.shapeGenerator = new ShapeGenerator();
-    this.blockSize = 55;
-    this.paddingAmount = 4; // Space inbetween blocks
+    this.blockSize = 14;
+    this.paddingAmount = 2; // Space inbetween blocks
 
     // Background
     this.edgePadding = width/17;
@@ -21,9 +21,12 @@ class Game {
     this.cellSize = this.sideLength/this.gridSize; // Size of each cell
     this.grid = new Grid(this.gridSize, this.cellSize, this.edgePadding, this.topPadding, this.sideLength, this.lineThickness);
 
-    this.shape1 = this.shapeGenerator.getRandomShape();
-    this.shape2 = this.shapeGenerator.getRandomShape();
-    this.shape3 = this.shapeGenerator.getRandomShape();
+    this.currentShapes = [this.shapeGenerator.getRandomShape(), this.shapeGenerator.getRandomShape(), this.shapeGenerator.getRandomShape()];  // The shapes at the bottom of the screen
+
+    // Spawn locations for the blocks at the bottom of the screen
+    this.shape1pos = [3 * this.edgePadding, 2 * this.sideLength - 3 * this.edgePadding];  // [x, y]
+    this.shape2pos = [width/2, 2 * this.sideLength - 3 * this.edgePadding];  // [x, y]
+    this.shape3pos = [width - 3 * this.edgePadding, 2 * this.sideLength - 3 * this.edgePadding];  // [x, y]
   }
 
 
@@ -31,17 +34,58 @@ class Game {
     this.drawBackground();
     this.drawScore();
     this.grid.renderGrid();
+
+    this.drawCurrentBlocks(this.currentShapes[0], this.shape2pos[0], this.shape2pos[1]);
   }
 
-  drawBlockPreview(shape) {
+  drawCurrentBlocks() {
     // Draw the preview of the block on the bottom of the screen
+
+    for (let i = 0; i < this.currentShapes.length; i++) {
+      let shape = this.currentShapes[i];
+
+      if (shape) {
+        // Calculate the min and max x and y to find the bounding box of the current shape
+        let minX = Math.min(...shape.positions.map(pos => pos[0]));
+        let maxX = Math.max(...shape.positions.map(pos => pos[0]));
+        let minY = Math.min(...shape.positions.map(pos => pos[1]));
+        let maxY = Math.max(...shape.positions.map(pos => pos[1]));
+
+        // Calculate the center offset of the current shape
+        let centerX = ((minX + maxX + 1) / 2) * (this.blockSize + this.paddingAmount);
+        let centerY = ((minY + maxY + 1) / 2) * (this.blockSize + this.paddingAmount);
+
+        // Make sure the current block is drawn in the right area based on where its supposed to be
+        let spawnX, spawnY;
+        if (i === 0) {
+          spawnX = this.shape1pos[0];
+          spawnY = this.shape1pos[1];
+        } else if (i === 1) {
+          spawnX = this.shape2pos[0];
+          spawnY = this.shape2pos[1];
+        } else {
+          spawnX = this.shape3pos[0];
+          spawnY = this.shape3pos[1];
+        }
+
+        // Draw the current shape
+        push();
+        {
+          fill(shape.color);
+          for (let pos of shape.positions) {
+            let rectX = pos[0] * (this.blockSize + this.paddingAmount) - centerX + spawnX;
+            let rectY = (maxY - pos[1]) * (this.blockSize + this.paddingAmount) - centerY + spawnY;
+
+            rect(rectX, rectY, this.blockSize, this.blockSize);
+          }
+        }
+        pop();
+      }
+    }
   }
 
 
   drawBackground() {
-    // everything is proportional to the size of the screen
-
-
     push();
     {
       background(63, 77, 131);

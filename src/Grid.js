@@ -21,7 +21,9 @@ class Grid {
         let canvasX = (this.edgePadding + this.cellSize/2) + (this.cellSize * x);
         let canvasY = (this.topPadding + this.sideLength - this.cellSize/2) - (this.cellSize * y);
 
-        this.grid.push(new GridBlock(x, y, canvasX, canvasY, true, "aqua"));
+        let filled = x % 2;
+
+        this.grid.push(new GridBlock(x, y, canvasX, canvasY, false, "aqua"));
       }
     }
   }

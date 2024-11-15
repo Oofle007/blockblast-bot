@@ -6,7 +6,7 @@ const height = uheight * size, width = uwidth * size;
 let game = new Game(width, height);
 
 function preload() {
-  font = loadFont("fonts/Square.ttf")
+  font = loadFont("../fonts/Square.ttf")
 }
 
 function setup() {
