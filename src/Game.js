@@ -1,13 +1,16 @@
 class Game {
-  constructor(width, height) {
+  constructor(width, height, originX, originY) {
     this.canvasWidth = width;
     this.canvasHeight = height;
     this.score = 0;
 
+    this.brain = new Brain();
+    this.updatedGrid = null;
+
     // BLOCK STUFF
     this.shapeGenerator = new ShapeGenerator();
-    this.blockSize = 14;
-    this.paddingAmount = 2; // Space inbetween blocks
+    this.blockSize = width/25.2;
+    this.paddingAmount = width/320; // Space inbetween blocks
 
     // Background
     this.edgePadding = width/17;
@@ -17,66 +20,175 @@ class Game {
     this.lineThickness = this.sideLength/230;
 
     // Grid
-    this.gridSize = 8;
+    this.gridSize = 7;
     this.cellSize = this.sideLength/this.gridSize; // Size of each cell
     this.grid = new Grid(this.gridSize, this.cellSize, this.edgePadding, this.topPadding, this.sideLength, this.lineThickness);
 
-    this.currentShapes = [this.shapeGenerator.getRandomShape(), this.shapeGenerator.getRandomShape(), this.shapeGenerator.getRandomShape()];  // The shapes at the bottom of the screen
-
+    this.currentShapes = [];  // The shapes at the bottom of the screen
     // Spawn locations for the blocks at the bottom of the screen
     this.shape1pos = [3 * this.edgePadding, 2 * this.sideLength - 3 * this.edgePadding];  // [x, y]
     this.shape2pos = [width/2, 2 * this.sideLength - 3 * this.edgePadding];  // [x, y]
     this.shape3pos = [width - 3 * this.edgePadding, 2 * this.sideLength - 3 * this.edgePadding];  // [x, y]
+
+    // Variables to spread the block placement across multiple frames
+    this.shapeNumber = 0;
+    this.positions = [];
+    this.color = [];
+
+    this.currentCombo = 0; // Not a combination of blocks, its the combo that awards more points when you've cleared rows
+    this.blocksSinceLastLineCleared = 0;
+
+
+    /**                  --------  SCORING RULES  --------
+     1) For every block placed, the score is incremented by the number of blocks that that block took up.
+     2) For every line cleared, the score is incremented by 10
+     3) There are combos in block blast, for every row you clear, the combo is incremented by one. If you don't clear a
+       row in 3 moves, the combo resets to 0.  The combo adds (10 * combo)  to the score on top of the line clear bonus
+     4)
+
+    */
+  }
+
+  initialize() {
+    game.drawBackground();
+    game.drawScore();
+    game.currentShapes = game.shapeGenerator.refreshCurrentShapes();
+    game.drawCurrentBlocks();  // Blocks at the bottom of the screen
   }
 
 
   draw() {
     this.drawBackground();
     this.drawScore();
-    this.grid.renderGrid();
 
-    this.drawCurrentBlocks(this.currentShapes[0], this.shape2pos[0], this.shape2pos[1]);
+    let actionCount = (frameCount - 1) % 5;  // Used to spread each block's placement across multiple frames
+
+    console.log(actionCount);
+
+
+    if (frameCount === 1) {  // On the first frame of the game, we need to find the best combo for the starting shapes
+      game.bestCombo = game.brain.findBestCombination(game.grid, game.currentShapes[0], game.currentShapes[1], game.currentShapes[2]);
+    }
+
+    if (actionCount <= 2) {  // Draw all 3 shapes (action will be 0, 1, then 2)
+      if (this.bestCombo === 0) {  // yeah its very very very dead
+        noLoop();
+
+        // Blocks on grid and bottom of screen disappeared when game ended so these are here to make it not do that
+        this.grid.renderGrid();
+        this.drawCurrentBlocks();  // Blocks at the bottom of the screen
+
+        this.drawEndScreen();
+        return;
+      }
+
+      // Find current shape of the current combination
+      this.shapeNumber = this.bestCombo.shapeOrder[actionCount];
+      this.positions = this.bestCombo.shapePositions[this.shapeNumber];
+      this.color = this.bestCombo.shapeColors[this.shapeNumber];
+
+      // End program when there are no more spaces left
+      if (this.positions.length === 0) {
+        noLoop();
+
+        // Blocks on grid and bottom of screen disappeared when game ended so these are here to make it not do that
+        this.grid.renderGrid();
+        this.drawCurrentBlocks();  // Blocks at the bottom of the screen
+
+        this.drawEndScreen();
+        return;
+      }
+
+      this.grid.playPosition(this.positions, this.color);  // Play the position on the grid
+
+      this.currentShapes[this.shapeNumber] = null;  // Remove the shape from the bottom shown
+      const linesCleared = this.grid.clearRowsAndColumns();  // Clear any rows and columns on the grid
+
+      if (this.blocksSinceLastLineCleared === 0) {
+        this.currentCombo = 0;
+      }
+
+      if (linesCleared !== 0) {
+        this.currentCombo += linesCleared;
+      } else {
+        this.blocksSinceLastLineCleared += 1;
+      }
+
+      this.score += this.positions.length;
+      this.score += (linesCleared * 10);
+
+      if (linesCleared > 0) {
+        this.score += (this.currentCombo * 10);
+      }
+
+      this.grid.renderGrid();  // Render out the current state of the grid
+      this.drawCurrentBlocks();  // Blocks at the bottom of the screen
+
+    } else if (actionCount === 3) {  // Next frame refresh the current shapes
+        this.currentShapes = this.shapeGenerator.refreshCurrentShapes();
+
+    } else if (actionCount === 4) {  // Next frame get the best combination
+      this.bestCombo = this.brain.findBestCombination(this.grid, this.currentShapes[0], this.currentShapes[1], this.currentShapes[2]);
+    }
+
+    // Always render the grid and draw the current blocks at the end of the frame
+    this.grid.renderGrid();
+    this.drawCurrentBlocks();  // Blocks at the bottom of the screen
+    this.drawCurrentCombo();
   }
 
-  drawCurrentBlocks() {
-    // Draw the preview of the block on the bottom of the screen
 
+  drawCurrentBlocks() {
+    const scale = this.blockSize + this.paddingAmount;
+    let blockBorderWeight = width/500;
+
+    // Iterate over all of the current shapes (the ones at the bottom of the screen)
     for (let i = 0; i < this.currentShapes.length; i++) {
       let shape = this.currentShapes[i];
 
+
       if (shape) {
-        // Calculate the min and max x and y to find the bounding box of the current shape
-        let minX = Math.min(...shape.positions.map(pos => pos[0]));
-        let maxX = Math.max(...shape.positions.map(pos => pos[0]));
-        let minY = Math.min(...shape.positions.map(pos => pos[1]));
-        let maxY = Math.max(...shape.positions.map(pos => pos[1]));
+        let xValues = shape.positions.map(pos => pos[0]);
+        let yValues = shape.positions.map(pos => pos[1]);
+        let minX = Math.min(...xValues);
+        let maxX = Math.max(...xValues);
+        let minY = Math.min(...yValues);
+        let maxY = Math.max(...yValues);
 
-        // Calculate the center offset of the current shape
-        let centerX = ((minX + maxX + 1) / 2) * (this.blockSize + this.paddingAmount);
-        let centerY = ((minY + maxY + 1) / 2) * (this.blockSize + this.paddingAmount);
+        let centerX = ((minX + maxX + 1) / 2) * scale;
+        let centerY = ((minY + maxY + 1) / 2) * scale;
 
-        // Make sure the current block is drawn in the right area based on where its supposed to be
-        let spawnX, spawnY;
-        if (i === 0) {
-          spawnX = this.shape1pos[0];
-          spawnY = this.shape1pos[1];
-        } else if (i === 1) {
-          spawnX = this.shape2pos[0];
-          spawnY = this.shape2pos[1];
-        } else {
-          spawnX = this.shape3pos[0];
-          spawnY = this.shape3pos[1];
-        }
+        // Get spawn positions
+        let spawnPos = [this.shape1pos, this.shape2pos, this.shape3pos][i];
+        let spawnX = spawnPos[0];
+        let spawnY = spawnPos[1];
 
-        // Draw the current shape
+        // Draw the drop shadows for the shape
         push();
         {
-          fill(shape.color);
           for (let pos of shape.positions) {
-            let rectX = pos[0] * (this.blockSize + this.paddingAmount) - centerX + spawnX;
-            let rectY = (maxY - pos[1]) * (this.blockSize + this.paddingAmount) - centerY + spawnY;
+            let rectX = pos[0] * scale - centerX + spawnX;
+            let rectY = (maxY - pos[1]) * scale - centerY + spawnY;
 
-            rect(rectX, rectY, this.blockSize, this.blockSize);
+            // Drop Shadow
+            noStroke();
+            fill(52, 63, 122);
+            rect(rectX + blockBorderWeight * 5, rectY + blockBorderWeight * 5, this.blockSize, this.blockSize);
+          }
+        }
+        pop();
+
+        // Draw the shape
+        push();
+        {
+          for (let pos of shape.positions) {
+            let rectX = pos[0] * scale - centerX + spawnX;
+            let rectY = (maxY - pos[1]) * scale - centerY + spawnY;
+
+            stroke(0);
+            strokeWeight(blockBorderWeight);
+            fill(shape.color);
+            rect(rectX, rectY, this.blockSize, this.blockSize);  // Block
           }
         }
         pop();
@@ -124,11 +236,44 @@ class Game {
 
     push();
     {
-      textFont("Square");
       textAlign(CENTER);
       textSize(scoreSize);
       fill(255);
+      textFont("Square");
       text(`${this.score}`, width/2, scorePadding);
+    }
+    pop();
+  }
+
+  drawEndScreen() {
+    let endSize = height/7;
+    let endPadding = this.topPadding + this.sideLength/2 + endSize/2;  // Puts the text in the middle of the grid
+
+    push();
+    {
+      textFont("Square");
+      textAlign(CENTER);
+      textSize(endSize);
+      fill(255);
+      strokeWeight(this.lineThickness * 3);
+      stroke(0);
+      text("DEAD", width/2, endPadding);
+    }
+    pop();
+  }
+
+  drawCurrentCombo() {
+    let comboSize = height/30;
+    let comboSidePadding = width/6;
+    let comboTopPadding = height/26;
+
+    push();
+    {
+      textAlign(CENTER);
+      textSize(comboSize);
+      fill(255);
+      textFont("Square");
+      text("COMBO: " + `${this.currentCombo}`, comboSidePadding, comboTopPadding);
     }
     pop();
   }
